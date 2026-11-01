@@ -46,26 +46,31 @@ export function hexToBinary(hexString = '') {
         .join('');
 }
 
+function wordIndex(word, wordList) {
+    if (!word) {
+        return -1;
+    }
+    return wordList.indexOf(word);
+}
+
+function checksumBits(hashHex, length) {
+    return zeroFill(parseInt(hashHex.substr(0, 2), 16).toString(2), 8).substr(
+        0,
+        length
+    );
+}
+
 /**
- * Maps word selections back to raw data, and determines valid last words (due to them being based on a checksum)
+ * Maps word selections back to raw data, and determines valid last words (due to them being based on a checksum).
+ * Words stay in their positions. A gap or a word that is not in the list is incomplete, and later words are not shifted into the gap.
  *
  * @param {string[]} words - Array of words, must have length of desired mnemonic
  * @param {string[]} wordList - BIP 39 wordlist, 2048 words to choose from
- * @return {{ isCompleted: boolean, entropy: { binary: string, hex: string }, checksum: { hash: string, firstBits: string, length: number }, validLastWords: string[]}} isCompleted: no empty or falsy values in the words array, entropy: binary and hex encodings of concatenated word indexes, checksum: SHA-256 hash of entropy, validLastWords: given n-1 words, a list of words that are valid for the last word
+ * @return {{ isCompleted: boolean, checksumValid?: boolean, entropy?: { binary: string, hex: string }, checksum?: { hash: string, firstBits: string, length: number }, validLastWords: string[]}}
  *
  */
 export function getDetails(words = [], wordList = []) {
     const mnemonicLength = words.length;
-    const selectedWords = words.filter(word => !!word);
-    const selectedLength = selectedWords.length;
-    const isCompleted = mnemonicLength === selectedLength;
-
-    if (selectedLength < mnemonicLength - 1) {
-        return {
-            isCompleted,
-        };
-    }
-
     const entropyLength = ENTROPY_BITS_MAP[mnemonicLength];
     if (!entropyLength) {
         throw new Error(
@@ -73,56 +78,87 @@ export function getDetails(words = [], wordList = []) {
                 LENGTH_OPTIONS.join()
         );
     }
+    // new Array(n) is sparse. Reading by index turns holes into empty slots.
+    const slots = Array.from({ length: mnemonicLength }, (_, i) => words[i]);
     const extraBits = entropyLength - 11 * (mnemonicLength - 1);
     const checksumLength = mnemonicLength * 11 - entropyLength;
+    const prefixIndexes = slots
+        .slice(0, mnemonicLength - 1)
+        .map(word => wordIndex(word, wordList));
+
+    // A hole would make the checksum describe the wrong words.
+    if (prefixIndexes.some(index => index < 0)) {
+        return {
+            isCompleted: false,
+            validLastWords: [],
+        };
+    }
+
+    const prefixBinary = prefixIndexes
+        .map(index => zeroFill(index.toString(2), 11))
+        .join('');
     const validLastWordCount = Math.pow(2, extraBits);
-
-    const binaryIndexes = selectedWords.map(word => {
-        const index = wordList.indexOf(word);
-        return zeroFill(index.toString(2), 11);
-    });
-    const binaryString = binaryIndexes.join('');
-    const binaryStringWithoutLastWord = binaryString.substr(
-        0,
-        entropyLength - extraBits
-    );
-    const entropyBinary = binaryString.substr(0, entropyLength);
-    const entropy = isCompleted
-        ? {
-              binary: entropyBinary,
-              hex: binaryToHex(entropyBinary),
-          }
-        : {};
-    const checksum = isCompleted
-        ? {
-              hash: shajs('sha256')
-                  .update(binaryToHex(entropyBinary), 'hex')
-                  .digest('hex'),
-              firstBits: binaryString.substr(entropyLength, checksumLength),
-              length: checksumLength,
-          }
-        : {};
-
     const validLastWords = [...new Array(validLastWordCount)].map((val, i) => {
         const binaryIndex = zeroFill(Number(i).toString(2), extraBits);
-        const hex = binaryToHex(binaryStringWithoutLastWord + binaryIndex);
+        const hex = binaryToHex(prefixBinary + binaryIndex);
         const hash = shajs('sha256')
             .update(hex, 'hex')
             .digest('hex');
-        const checksum = zeroFill(
-            parseInt(hash.substr(0, 2), 16).toString(2),
-            8
-        ).substr(0, checksumLength);
-        const wordIndex = binaryIndex + checksum;
-        return wordList[parseInt(wordIndex, 2)];
+        const wordIndexBits = binaryIndex + checksumBits(hash, checksumLength);
+        return wordList[parseInt(wordIndexBits, 2)];
     });
 
+    const lastIndex = wordIndex(slots[mnemonicLength - 1], wordList);
+    if (lastIndex < 0) {
+        return {
+            isCompleted: false,
+            validLastWords,
+        };
+    }
+
+    const binaryString =
+        prefixBinary + zeroFill(lastIndex.toString(2), 11);
+    const entropyBinary = binaryString.substr(0, entropyLength);
+    const hash = shajs('sha256')
+        .update(binaryToHex(entropyBinary), 'hex')
+        .digest('hex');
+    const firstBits = binaryString.substr(entropyLength, checksumLength);
+
     return {
-        isCompleted,
-        entropy,
-        checksum,
+        isCompleted: true,
+        checksumValid: firstBits === checksumBits(hash, checksumLength),
+        entropy: {
+            binary: entropyBinary,
+            hex: binaryToHex(entropyBinary),
+        },
+        checksum: {
+            hash,
+            firstBits,
+            length: checksumLength,
+        },
         validLastWords,
     };
+}
+
+/**
+ * Keeps the current last word when it is still a valid checksum word.
+ * Replaces it only when it is set and no longer valid.
+ *
+ * @param {string[]} words
+ * @param {string[]} validLastWords
+ * @return {string[]}
+ */
+export function withValidLastWord(words, validLastWords = []) {
+    if (!words.length || !validLastWords.length) {
+        return words;
+    }
+    const last = words[words.length - 1];
+    if (!last || validLastWords.indexOf(last) !== -1) {
+        return words;
+    }
+    const next = words.slice();
+    next[next.length - 1] = validLastWords[0];
+    return next;
 }
 
 /**
@@ -155,10 +191,7 @@ export function mnemonicFromEntropy(entropy = '', length = 24, wordList = []) {
     const checksumHash = shajs('sha256')
         .update(entropyHash, 'hex')
         .digest('hex');
-    const checksum = zeroFill(
-        parseInt(checksumHash.substr(0, 2), 16).toString(2),
-        8
-    ).substr(0, checksumLength);
+    const checksum = checksumBits(checksumHash, checksumLength);
     const result = binary + checksum;
     // map to words
     const words = [];
@@ -200,10 +233,7 @@ export function generateRandomMnemonic(length = 24, wordList = []) {
     const hash = shajs('sha256')
         .update(hexEncoded, 'hex')
         .digest('hex');
-    const checksum = zeroFill(
-        parseInt(hash.substr(0, 2), 16).toString(2),
-        8
-    ).substr(0, checksumLength);
+    const checksum = checksumBits(hash, checksumLength);
     const result = entropy + checksum;
     // map to words
     const words = [];
@@ -216,13 +246,10 @@ export function generateRandomMnemonic(length = 24, wordList = []) {
 }
 
 export function getSeed(words = [], passphrase = '') {
+    // BIP39 hashes the NFKD form. "Á" and "A" + combining acute must match.
+    const sentence = words.join(' ').normalize('NFKD');
+    const salt = ('mnemonic' + (passphrase || '')).normalize('NFKD');
     return pbkdf2
-        .pbkdf2Sync(
-            words.join(' '),
-            'mnemonic' + (passphrase || ''),
-            2048,
-            64,
-            'sha512'
-        )
+        .pbkdf2Sync(sentence, salt, 2048, 64, 'sha512')
         .reduce((prev, curr) => prev + zeroFill(curr.toString(16), 2), '');
 }

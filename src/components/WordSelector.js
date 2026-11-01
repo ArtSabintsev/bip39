@@ -46,6 +46,10 @@ const WordSelect = styled.input`
     padding: 8px 14px;
     width: 100%;
     cursor: pointer;
+    &:disabled {
+        cursor: not-allowed;
+        background-color: ${colors.bgSecondary};
+    }
     @media (${breakpoints.phone}) {
         font-size: 13px;
         padding: 6px 12px;
@@ -262,6 +266,9 @@ class WordSelector extends React.Component {
     };
 
     handleClick = e => {
+        if (this.props.disabled) {
+            return;
+        }
         const { showOptions } = this.state;
         if (!showOptions) {
             this.showOptions();
@@ -303,6 +310,9 @@ class WordSelector extends React.Component {
     };
 
     handleKeyDown = e => {
+        if (this.props.disabled) {
+            return;
+        }
         const { key, shiftKey, target } = e;
         const { options, showOptions, highlightedOptionIndex } = this.state;
         if (!showOptions && (key === 'Enter' || key === 'ArrowDown')) {
@@ -386,7 +396,7 @@ class WordSelector extends React.Component {
 
     render() {
         const { options, search, showOptions } = this.state;
-        const { index, indexDisplay, word } = this.props;
+        const { index, indexDisplay, word, disabled } = this.props;
         const inputName = `word${index}`;
         const isOverlay = isSmallScreen();
         const Options = isOverlay ? OptionsOverlay : OptionsContainer;
@@ -407,6 +417,7 @@ class WordSelector extends React.Component {
                     placeholder={`Word ${indexDisplay}`}
                     autoComplete="off"
                     readOnly={true}
+                    disabled={disabled}
                     value={word}
                     onClick={this.handleClick}
                     onKeyDown={this.handleKeyDown}

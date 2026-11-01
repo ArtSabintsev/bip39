@@ -7,6 +7,7 @@ import {
     generateRandomMnemonic,
     getSeed,
     mnemonicFromEntropy,
+    withValidLastWord,
 } from './utils';
 
 import WORDLIST from './wordlists';
@@ -122,6 +123,7 @@ const validWords = [
 const correctOutput = [
     {
         isCompleted: true,
+        checksumValid: true,
         entropy: {
             binary:
                 '1000011001010110000010100111001010010111101011110011000011010101010011100111001000010110011001011111101001111000010110110100100001110000000001000101010000000111110110000110100001110001101100101011111000100011110001000110010100110101110111010100001011011000',
@@ -147,6 +149,7 @@ const correctOutput = [
     },
     {
         isCompleted: true,
+        checksumValid: true,
         entropy: {
             binary:
                 '00111101101101101111101001010100010001001011011100010011011101010001110110111001101111001010010101101110110011001101100100011100100100000110111010001110101010110011101011111101000101101001110101010011101101000000100111010001',
@@ -179,6 +182,7 @@ const correctOutput = [
     },
     {
         isCompleted: true,
+        checksumValid: true,
         entropy: {
             binary:
                 '011010000100101101000001011110100000100100101100001100000001010001111001101111000101111100100101101101001100111100101011111101101111011001001101010100011110100010010111110010111101001011111000',
@@ -227,6 +231,7 @@ const correctOutput = [
     },
     {
         isCompleted: true,
+        checksumValid: true,
         entropy: {
             binary:
                 '1001011111011011101011011001110100110100101000011011110111101011101011000100000010110011011000101100101010010011101111001010100000101010100011111110001110100111',
@@ -307,6 +312,7 @@ const correctOutput = [
     },
     {
         isCompleted: true,
+        checksumValid: true,
         entropy: {
             binary:
                 '00100011111111010000101100110011111000110010100101100011111111000000100111111110111100111111001010011011110111010001111111010010',
@@ -504,6 +510,7 @@ describe('getDetails', () => {
     test('incomplete words', () => {
         expect(getDetails(new Array(24), WORDLIST)).toEqual({
             isCompleted: false,
+            validLastWords: [],
         });
     });
     test('invalid number of words', () => {
@@ -565,5 +572,120 @@ describe('mnemonicFromEntropy', () => {
                 )
             ).toBeGreaterThan(-1);
         });
+    });
+});
+
+const ABANDON =
+    'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+
+// Trezor/python-mnemonic vectors. The seed uses passphrase "TREZOR".
+const OFFICIAL = [
+    {
+        entropy: '00000000000000000000000000000000',
+        mnemonic: ABANDON,
+        seed:
+            'c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04',
+    },
+    {
+        entropy: '000000000000000000000000000000000000000000000000',
+        mnemonic:
+            'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon agent',
+        seed:
+            '035895f2f481b1b0f01fcf8c289c794660b289981a78f8106447707fdd9666ca06da5a9a565181599b79f53b844d8a71dd9f439c52a3d7b3e8a79c906ac845fa',
+    },
+    {
+        entropy:
+            '0000000000000000000000000000000000000000000000000000000000000000',
+        mnemonic:
+            'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art',
+        seed:
+            'bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd3097170af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8',
+    },
+];
+
+describe('BIP39 vectors', () => {
+    test('entropy, checksum, and TREZOR passphrase seed', () => {
+        OFFICIAL.forEach(vector => {
+            const words = vector.mnemonic.split(' ');
+            const details = getDetails(words, WORDLIST);
+            expect(details.entropy.hex).toBe(vector.entropy);
+            expect(details.checksumValid).toBe(true);
+            expect(details.validLastWords).toContain(words[words.length - 1]);
+            expect(getSeed(words, 'TREZOR')).toBe(vector.seed);
+        });
+    });
+
+    test('empty passphrase seed for the all-zero 12 word phrase', () => {
+        expect(getSeed(ABANDON.split(' '), '')).toBe(
+            '5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4'
+        );
+    });
+
+    test('NFKD passphrase matches a wallet', () => {
+        const words = ABANDON.split(' ');
+        const seed = getSeed(words, '\u00C1');
+        expect(seed).toBe(getSeed(words, 'A\u0301'));
+        expect(seed).toBe(
+            '73e01fb69c9360b0c41a2c0ec3b65c228ffe87c276f9c832f710b57f542cffdcf94fecc4ba30b378b9c69d6eafa9d65e32c38dea193bcbd55f117d185e7ac3ec'
+        );
+        expect(getSeed(words, ' ')).toBe(getSeed(words, '\u3000'));
+    });
+});
+
+describe('word positions', () => {
+    const words = ABANDON.split(' ');
+
+    test('a gap does not shift later words into the checksum', () => {
+        const gapped = words.slice();
+        gapped[3] = undefined;
+        expect(getDetails(gapped, WORDLIST)).toEqual({
+            isCompleted: false,
+            validLastWords: [],
+        });
+    });
+
+    test('an unknown word is not a completed phrase', () => {
+        const unknown = words.slice();
+        unknown[2] = 'notaword';
+        expect(getDetails(unknown, WORDLIST)).toEqual({
+            isCompleted: false,
+            validLastWords: [],
+        });
+    });
+
+    test('the last word stays open until the prefix is chosen', () => {
+        const prefix = words.slice(0, 11);
+        prefix.push(undefined);
+        const details = getDetails(prefix, WORDLIST);
+        expect(details.isCompleted).toBe(false);
+        expect(details.validLastWords).toContain('about');
+    });
+
+    test('a wrong last word is detected', () => {
+        const invalid = words.slice();
+        invalid[11] = 'abandon';
+        const details = getDetails(invalid, WORDLIST);
+        expect(details.isCompleted).toBe(true);
+        expect(details.checksumValid).toBe(false);
+    });
+
+    test('withValidLastWord keeps a valid last word and replaces an invalid one', () => {
+        const details = getDetails(words, WORDLIST);
+        expect(withValidLastWord(words, details.validLastWords)).toBe(words);
+
+        const changed = words.slice();
+        changed[0] = 'zoo';
+        const changedDetails = getDetails(changed, WORDLIST);
+        const fixed = withValidLastWord(
+            changed,
+            changedDetails.validLastWords
+        );
+        expect(changedDetails.validLastWords).toContain(
+            fixed[fixed.length - 1]
+        );
+        expect(getDetails(fixed, WORDLIST).checksumValid).toBe(true);
+        if (changedDetails.validLastWords.indexOf(changed[11]) === -1) {
+            expect(fixed[11]).toBe(changedDetails.validLastWords[0]);
+        }
     });
 });

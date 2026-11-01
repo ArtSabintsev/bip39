@@ -17,9 +17,9 @@ import {
     getSeed,
     generateRandomMnemonic,
     mnemonicFromEntropy,
+    withValidLastWord,
     zeroFill,
 } from '../utils';
-import debounce from 'lodash.debounce';
 
 const GlobalStyles = createGlobalStyle`
     body {
@@ -203,6 +203,11 @@ const LongString = styled.span`
     background-color: ${colors.bgSecondary};
 `;
 
+const ChecksumWarning = styled.p`
+    color: #9b1c1c;
+    font-weight: bold;
+`;
+
 const GithubLink = styled(IoLogoGithub)`
     color: ${colors.textPrimary};
 `;
@@ -248,39 +253,65 @@ class App extends React.Component {
             entropyInput: '',
             seed: '',
             passphrase: '',
+            checksumValid: false,
         };
     }
 
+    clearTextArea = () => {
+        if (this.textAreaRef.current) {
+            this.textAreaRef.current.value = '';
+        }
+    };
+
+    // Drop entropy, checksum, and last-word candidates unless this result replaces them.
+    phraseState = (words, details, extra) => {
+        return {
+            words,
+            entropy: null,
+            checksum: null,
+            checksumValid: false,
+            validLastWords: [],
+            ...details,
+            seed:
+                details.isCompleted && details.checksumValid
+                    ? getSeed(words, extra.passphrase || '')
+                    : '',
+            ...extra,
+        };
+    };
+
     handleCountChange = wordCount => {
         const { words, wordList, passphrase, entropyInput } = this.state;
-        const updatedWords = entropyInput
+        let updatedWords = entropyInput
             ? mnemonicFromEntropy(entropyInput, wordCount, wordList)
             : [...new Array(wordCount)].map((val, i) => words[i]);
-        const details = getDetails(updatedWords, wordList);
-        const { validLastWords, isCompleted } = details;
-        if (isCompleted && !entropyInput) {
-            updatedWords[wordCount - 1] = validLastWords[0];
+        let details = getDetails(updatedWords, wordList);
+        if (!entropyInput) {
+            updatedWords = withValidLastWord(
+                updatedWords,
+                details.validLastWords
+            );
+            details = getDetails(updatedWords, wordList);
         }
-        this.setState({
-            wordCount,
-            words: updatedWords,
-            validLastWords: [],
-            ...getDetails(updatedWords, wordList),
-            seed: isCompleted ? getSeed(updatedWords, passphrase) : '',
-            passphrase: isCompleted ? passphrase : '',
-        });
+        this.setState(
+            this.phraseState(updatedWords, details, {
+                wordCount,
+                passphrase: details.isCompleted ? passphrase : '',
+            })
+        );
     };
 
     handleGenerate = () => {
         const { wordCount, wordList, passphrase } = this.state;
         const words = generateRandomMnemonic(wordCount, wordList);
-        this.setState({
-            words,
-            ...getDetails(words, wordList),
-            entropyInput: '',
-            seed: getSeed(words, passphrase),
-        });
-        this.textAreaRef.current.value = '';
+        const details = getDetails(words, wordList);
+        this.setState(
+            this.phraseState(words, details, {
+                entropyInput: '',
+                passphrase,
+            })
+        );
+        this.clearTextArea();
     };
 
     handleReset = () => {
@@ -288,64 +319,67 @@ class App extends React.Component {
         this.setState({
             words: new Array(wordCount),
             isCompleted: false,
+            checksumValid: false,
             validLastWords: [],
+            entropy: null,
+            checksum: null,
             entropyInput: '',
             seed: '',
             passphrase: '',
         });
-        this.textAreaRef.current.value = '';
+        this.clearTextArea();
     };
 
     handleEntropy = e => {
-        this.handleEntropyDebounce(e.target.value);
-    };
-
-    handleEntropyDebounce = debounce(entropyInput => {
+        const entropyInput = e.target.value;
         if (!entropyInput) {
             this.handleReset();
             return;
         }
         const { wordCount, wordList, passphrase } = this.state;
         const words = mnemonicFromEntropy(entropyInput, wordCount, wordList);
-        this.setState({
-            words,
-            entropyInput,
-            ...getDetails(words, wordList),
-            seed: getSeed(words, passphrase),
-        });
-    }, 250);
+        const details = getDetails(words, wordList);
+        this.setState(
+            this.phraseState(words, details, {
+                entropyInput,
+                passphrase,
+            })
+        );
+    };
 
     handleChange = ({ word, index }) => {
         const { wordCount, words, wordList, passphrase } = this.state;
-        const updatedWords = [...new Array(wordCount)].map((val, i) => {
+        let updatedWords = [...new Array(wordCount)].map((val, i) => {
             return i === index ? word : words[i];
         });
-        const details = getDetails(updatedWords, wordList);
-        const { validLastWords, isCompleted } = details;
-        if (isCompleted && index !== wordCount - 1) {
-            updatedWords[wordCount - 1] = validLastWords[0];
+        let details = getDetails(updatedWords, wordList);
+        if (index !== wordCount - 1) {
+            updatedWords = withValidLastWord(
+                updatedWords,
+                details.validLastWords
+            );
+            details = getDetails(updatedWords, wordList);
         }
-
-        this.setState({
-            words: updatedWords,
-            ...getDetails(updatedWords, wordList),
-            entropyInput: '',
-            seed: getSeed(updatedWords, passphrase),
-        });
-        this.textAreaRef.current.value = '';
+        this.setState(
+            this.phraseState(updatedWords, details, {
+                entropyInput: '',
+                passphrase,
+            })
+        );
+        this.clearTextArea();
     };
 
     handlePassphrase = e => {
-        this.handlePassphraseDebounce(e.target.value);
-    };
-
-    handlePassphraseDebounce = debounce(passphrase => {
-        const { words } = this.state;
+        const passphrase = e.target.value;
+        const { words, isCompleted, checksumValid } = this.state;
         this.setState({
-            seed: getSeed(words, passphrase),
             passphrase,
+            seed:
+                isCompleted && checksumValid
+                    ? getSeed(words, passphrase)
+                    : '',
         });
-    }, 250);
+    };
 
     renderWordWithIndex = (word, i) => {
         const { wordList } = this.state;
@@ -371,6 +405,8 @@ class App extends React.Component {
             checksum,
             seed,
             isCompleted,
+            checksumValid,
+            passphrase,
         } = this.state;
         // console.log(this.state);
         // console.log(words.join(' '));
@@ -388,7 +424,7 @@ class App extends React.Component {
                         indexDisplay={i + 1}
                         word={words[i] || ''}
                         wordList={isLastWord ? validLastWords : wordList}
-                        disabled={validLastWords.length === 0}
+                        disabled={isLastWord && validLastWords.length === 0}
                         onChange={this.handleChange}
                     />
                 </FlexItem>
@@ -420,6 +456,10 @@ class App extends React.Component {
                     <textarea
                         ref={this.textAreaRef}
                         placeholder="Optional user provided entropy. Type randomly here to generate a random mnemonic."
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck={false}
                         onChange={this.handleEntropy}
                     />
                 </CenteredRow>
@@ -462,20 +502,37 @@ class App extends React.Component {
                             </Subheader>
                         </Header>
                         <div>{words.map(this.renderWordWithIndex)}</div>
-                        <Header>
-                            Seed - 512 bits
-                            <Subheader>
-                                PBKDF2 - SHA-512 / 2048 iterations
-                            </Subheader>
-                        </Header>
-                        <div>
-                            <DetailsLabel>Optional Passphrase</DetailsLabel>
-                            <input
-                                type="text"
-                                onChange={this.handlePassphrase}
-                            />
-                        </div>
-                        <LongString>{seed}</LongString>
+                        {checksumValid ? (
+                            <div>
+                                <Header>
+                                    Seed - 512 bits
+                                    <Subheader>
+                                        PBKDF2 - SHA-512 / 2048 iterations
+                                    </Subheader>
+                                </Header>
+                                <div>
+                                    <DetailsLabel>
+                                        Optional Passphrase
+                                    </DetailsLabel>
+                                    <input
+                                        type="text"
+                                        name="bip39-passphrase"
+                                        autoComplete="off"
+                                        autoCapitalize="none"
+                                        autoCorrect="off"
+                                        spellCheck={false}
+                                        value={passphrase}
+                                        onChange={this.handlePassphrase}
+                                    />
+                                </div>
+                                <LongString>{seed}</LongString>
+                            </div>
+                        ) : (
+                            <ChecksumWarning>
+                                Checksum does not match this phrase. No seed is
+                                shown until the last word is valid.
+                            </ChecksumWarning>
+                        )}
                     </DetailsContainer>
                 ) : null}
                 <CenteredRow>

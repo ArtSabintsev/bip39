@@ -16,7 +16,7 @@
     "serve": "gatsby serve",
     "serveMobile": "gatsby serve -H $HOSTNAME -p 9000",
     "serveProd": "gatsby serve --prefix-paths",
-    "test": "jest src/*.test.js"
+    "test": "jest"
   },
   "dependencies": {
     "babel-plugin-styled-components": "^1.10.6",
