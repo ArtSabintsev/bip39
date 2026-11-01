@@ -7,6 +7,7 @@ import {
     generateRandomMnemonic,
     getSeed,
     mnemonicFromEntropy,
+    parseMnemonic,
     withValidLastWord,
 } from './utils';
 
@@ -555,6 +556,47 @@ describe('getSeed', () => {
         expect(getSeed(validWords[0], 'abc')).toBe(
             '5f21fd27b862b433b767dc118b1954cf2c86a46a5ec410c4aaafd12e5ad1014bfaef465dd73aff013beffcf58edae0c4055c674869f8963fd0867b10b15ef00c'
         );
+    });
+});
+
+describe('parseMnemonic', () => {
+    test('reads a numbered, punctuated phrase', () => {
+        const pasted = OFFICIAL[0].mnemonic
+            .split(' ')
+            .map((word, i) => (i + 1) + '. ' + word.toUpperCase() + ',')
+            .join('\n');
+        expect(parseMnemonic(pasted, WORDLIST)).toEqual({
+            words: OFFICIAL[0].mnemonic.split(' '),
+            error: '',
+        });
+    });
+
+    test('rejects the wrong length and unknown words', () => {
+        expect(parseMnemonic('abandon abandon', WORDLIST).error).toBe(
+            'Phrase has 2 words. Use 12, 15, 18, 21, or 24.'
+        );
+        expect(parseMnemonic('notaword', WORDLIST).error).toBe(
+            'Phrase has 1 word. Use 12, 15, 18, 21, or 24.'
+        );
+        const typed = OFFICIAL[0].mnemonic.replace('about', 'notaword');
+        expect(parseMnemonic(typed, WORDLIST)).toEqual({
+            words: [],
+            error: 'Unknown word: notaword.',
+        });
+        expect(parseMnemonic('   ', WORDLIST)).toEqual({
+            words: [],
+            error: '',
+        });
+    });
+
+    test('accepts each official length without fixing the checksum', () => {
+        OFFICIAL.forEach(vector => {
+            const parsed = parseMnemonic(vector.mnemonic, WORDLIST);
+            expect(parsed.error).toBe('');
+            expect(parsed.words).toEqual(vector.mnemonic.split(' '));
+        });
+        const broken = ABANDON.replace(/about$/, 'abandon');
+        expect(parseMnemonic(broken, WORDLIST).words[11]).toBe('abandon');
     });
 });
 

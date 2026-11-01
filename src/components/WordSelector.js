@@ -40,48 +40,44 @@ const Container = styled.div`
 
 const WordSelect = styled.input`
     display: block;
-    border: 1px solid;
-    border-radius: 3px;
-    font-size: 16px;
-    padding: 8px 14px;
+    border: 1px solid ${colors.border};
+    border-radius: 10px;
+    background: ${colors.bgPrimary};
+    font-size: 15px;
+    font-weight: 500;
+    padding: 10px 32px 10px 36px;
     width: 100%;
     cursor: pointer;
+    &:focus {
+        outline: none;
+        border-color: ${colors.bgAccent};
+    }
     &:disabled {
         cursor: not-allowed;
+        color: ${colors.textSecondary};
         background-color: ${colors.bgSecondary};
-    }
-    @media (${breakpoints.phone}) {
-        font-size: 13px;
-        padding: 6px 12px;
     }
 `;
 
 const WordIndexLabel = styled.label`
     position: absolute;
-    top: -8px;
-    left: -8px;
-    height: 16px;
-    width: 16px;
-    font-size: 10px;
-    border-radius: 3px;
-    background-color: ${colors.bgInverse};
-    color: ${colors.textInverse};
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    top: 50%;
+    left: 10px;
+    transform: translateY(-50%);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: ${colors.textSecondary};
+    pointer-events: none;
 `;
 
 const SelectOpenIcon = styled(IoIosArrowDown)`
     position: absolute;
-    top: 5px;
-    right: 0;
-    padding: 4px;
-    font-size: 20px;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    font-size: 18px;
+    color: ${colors.textSecondary};
     cursor: pointer;
-    @media (${breakpoints.phone}) {
-        top: 6px;
-        font-size: 13px;
-    }
 `;
 
 const OptionsContainer = styled.div`
@@ -124,16 +120,14 @@ const SearchInput = styled.input`
     display: block;
     outline: none;
     width: 100%;
-    border: 1px solid ${colors.textSecondary};
-    border-width: 1px 1px 0;
-    border-radius: 0;
+    border: 1px solid ${colors.border};
+    border-bottom: none;
+    border-radius: 10px 10px 0 0;
     margin: 0;
-    padding: 8px 24px;
-    font-size: 12px;
-    @media (${breakpoints.tablet}) {
-        font-size: 16px;
-    }
-`; // prevent input zoom on iPhone
+    padding: 8px 28px;
+    font-size: 16px;
+    background: ${colors.bgPrimary};
+`;
 
 const SearchIcon = styled(IoIosSearch)`
     position: absolute;
@@ -454,11 +448,13 @@ class WordSelector extends React.Component {
                                 width="100%"
                                 innerElementType="ul"
                                 style={{
-                                    border: '1px solid',
+                                    border: `1px solid ${colors.border}`,
+                                    borderRadius: '0 0 10px 10px',
                                     overflowX: 'hidden',
                                     position: 'absolute',
                                     zIndex: 1,
                                     backgroundColor: colors.bgPrimary,
+                                    boxShadow: '0 12px 28px rgba(28, 25, 23, 0.12)',
                                 }}
                             >
                                 {this.renderWordOption}

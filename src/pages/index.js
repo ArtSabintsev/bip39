@@ -3,9 +3,8 @@ import styled, { createGlobalStyle } from 'styled-components';
 import { Helmet } from 'react-helmet';
 
 import WordSelector from '../components/WordSelector';
-import { IoLogoGithub } from 'react-icons/io';
 
-import { colors, breakpoints } from '../styles';
+import { colors, breakpoints, mono } from '../styles';
 
 // english only for now, TODO: add other languages
 import WORDLIST from '../wordlists';
@@ -17,47 +16,84 @@ import {
     getSeed,
     generateRandomMnemonic,
     mnemonicFromEntropy,
+    parseMnemonic,
     withValidLastWord,
     zeroFill,
 } from '../utils';
+import {
+    BTC_ADDRESS_PATH,
+    EVM_ADDRESS_PATH,
+    deriveAddresses,
+} from '../addresses';
 
 const GlobalStyles = createGlobalStyle`
     body {
         margin: 0;
+        background: ${colors.bgPage};
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
             Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
             'Segoe UI Symbol';
         box-sizing: border-box;
-        div, input, textarea
+        div, input, textarea, button
         {
             box-sizing: inherit;
         }
         color: ${colors.textPrimary};
-        @media (${breakpoints.phone}) {
-            font-size: 13px;
-        }
-        input, textarea {
+        input, textarea, button {
+            font-family: inherit;
             -webkit-appearance: none;
         }
     }
 `;
 
+const Page = styled.div`
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 40px 24px 64px;
+    @media (${breakpoints.phone}) {
+        padding: 24px 14px 48px;
+    }
+`;
+
 const Title = styled.h1`
-    font-size: 24px;
-    font-weight: bold;
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
     text-align: center;
+    margin: 0;
+`;
+
+const Lead = styled.p`
+    margin: 8px auto 0;
+    max-width: 36em;
+    text-align: center;
+    color: ${colors.textSecondary};
+    font-size: 15px;
+    line-height: 1.45;
 `;
 
 const Header = styled.h2`
-    font-size: 20px;
-    margin-bottom: 4px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 22px 0 4px;
 `;
 
 const Subheader = styled.span`
-    font-size: 16px;
+    display: block;
+    font-size: 13px;
     font-weight: normal;
+    line-height: 1.4;
     color: ${colors.textSecondary};
-    margin-left: 8px;
+    margin-top: 2px;
+`;
+
+const Controls = styled.div`
+    margin-top: 28px;
+    padding: 16px;
+    background: ${colors.bgPrimary};
+    border: 1px solid ${colors.border};
+    border-radius: 16px;
 `;
 
 const CenteredRow = styled.div`
@@ -65,34 +101,66 @@ const CenteredRow = styled.div`
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
+    gap: 10px;
+`;
+
+const FieldLabel = styled.label`
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    margin: 14px auto 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: ${colors.textSecondary};
     > textarea {
-        border: 1px solid ${colors.textPrimary};
-        border-radius: 3px;
-        width: 90%;
-        max-width: 500px;
-        height: 40px;
-        margin-top: 8px;
-        @media (${breakpoints.phone}) {
-            font-size: 16px;
+        display: block;
+        width: 100%;
+        margin-top: 6px;
+        border: 1px solid ${colors.border};
+        border-radius: 10px;
+        background: ${colors.bgSecondary};
+        padding: 10px 12px;
+        height: 64px;
+        resize: vertical;
+        font-size: 15px;
+        line-height: 1.4;
+        color: ${colors.textPrimary};
+        &:focus {
+            outline: none;
+            border-color: ${colors.bgAccent};
+            background: ${colors.bgPrimary};
         }
+    }
+`;
+
+const PhraseLabel = styled(FieldLabel)`
+    > textarea {
+        height: 96px;
+        font-family: ${mono};
+        font-size: 14px;
+        line-height: 1.45;
     }
 `;
 
 const CountContainer = styled.div`
     display: flex;
-    border: 1px solid;
-    border-radius: 4px;
-    margin: 0 10px;
+    border: 1px solid ${colors.border};
+    border-radius: 10px;
+    overflow: hidden;
+    background: ${colors.bgSecondary};
 `;
 
-const RadioGroupLabel = styled.label`
-    margin: 8px 0;
+const RadioGroupLabel = styled.span`
+    font-size: 12px;
+    font-weight: 600;
+    color: ${colors.textSecondary};
 `;
 
 const CountLabel = styled.label`
-    padding: 8px 16px;
+    padding: 8px 14px;
     cursor: pointer;
-    border-right: 1px solid;
+    border-right: 1px solid ${colors.border};
+    font-variant-numeric: tabular-nums;
     &:hover {
         background-color: ${colors.bgHover};
     }
@@ -100,12 +168,8 @@ const CountLabel = styled.label`
         color: ${colors.textSelected};
         background-color: ${colors.bgSelected};
     }
-    &:first-child {
-        border-radius: 4px 0 0 4px;
-    }
     &:last-child {
         border-right: none;
-        border-radius: 0 4px 4px 0;
     }
 `;
 
@@ -119,71 +183,89 @@ const CountRadio = styled.input.attrs(() => ({
 `;
 
 const GenerateButton = styled.button`
-    padding: 6px 20px;
+    padding: 8px 16px;
     background-color: ${colors.bgAccent};
-    border: 2px solid ${colors.bgAccent};
+    border: 1px solid ${colors.bgAccent};
     color: ${colors.textAccent};
-    border-radius: 18px;
+    border-radius: 10px;
     outline: none;
     cursor: pointer;
     font-size: 14px;
-    margin: 10px;
+    font-weight: 600;
     &:hover {
-        box-shadow: ${colors.bgAccent} 0 0 0 2px;
+        filter: brightness(1.08);
     }
-    transition-property: box-shadow;
-    transition-duration: 0.1s;
 `;
 
 const ResetButton = styled(GenerateButton)`
     background-color: transparent;
-    color: ${colors.bgAccent};
+    color: ${colors.textPrimary};
+    border-color: ${colors.border};
+    &:hover {
+        filter: none;
+        background: ${colors.bgSecondary};
+    }
 `;
 
 const FlexRow = styled.div`
     display: flex;
     flex-wrap: wrap;
-    margin: 20px;
-    @media (${breakpoints.phone}) {
-        margin: 8px;
-    }
+    margin: 18px -6px 0;
 `;
 
 const FlexItem = styled.div`
-    flex: 0 0 16.6%;
-    padding: 8px;
+    flex: 0 0 25%;
+    padding: 6px;
     @media (${breakpoints.tablet}) {
-        flex: 0 0 33.3%;
+        flex: 0 0 50%;
     }
 `;
 
 const DetailsContainer = styled.div`
-    margin: 20px;
+    margin-top: 22px;
+    padding: 8px 22px 22px;
+    background: ${colors.bgPrimary};
+    border: 1px solid ${colors.border};
+    border-radius: 16px;
     input {
-        padding: 4px;
-        border: 1px solid;
-        border-radius: 3px;
-        margin: 4px 0;
+        display: block;
+        width: 100%;
+        max-width: 360px;
+        padding: 10px 12px;
+        border: 1px solid ${colors.border};
+        border-radius: 10px;
+        margin: 6px 0 10px;
         font-size: 16px;
+        background: ${colors.bgSecondary};
+        &:focus {
+            outline: none;
+            border-color: ${colors.bgAccent};
+            background: ${colors.bgPrimary};
+        }
     }
     @media (${breakpoints.phone}) {
-        margin: 8px;
+        padding: 4px 14px 16px;
     }
 `;
 
 const WordWithIndex = styled.div`
     display: inline-block;
-    border: 1px solid;
-    border-radius: 3px;
-    padding: 4px;
-    margin: 4px;
-    margin-left: 0;
+    border: 1px solid ${colors.border};
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin: 0 8px 8px 0;
+    background: ${colors.bgSecondary};
+    min-width: 9em;
     > div > span {
         color: ${colors.textSecondary};
-        font-size: 13px;
+        font-size: 12px;
+        margin-left: 6px;
     }
     > div:last-child {
+        margin-top: 2px;
+        font-family: ${mono};
         font-size: 11px;
+        color: ${colors.textSecondary};
     }
 `;
 
@@ -194,22 +276,31 @@ const DetailsLabel = styled.span`
 `;
 
 const LongString = styled.span`
-    display: inline-block;
+    display: block;
     word-break: break-all;
-    padding: 4px;
-    margin: 4px 0;
-    border: 1px solid;
-    border-radius: 3px;
+    padding: 10px 12px;
+    margin: 6px 0 0;
+    border: 1px solid ${colors.border};
+    border-radius: 10px;
     background-color: ${colors.bgSecondary};
+    font-family: ${mono};
+    font-size: 13px;
+    line-height: 1.45;
 `;
 
 const ChecksumWarning = styled.p`
-    color: #9b1c1c;
-    font-weight: bold;
+    color: ${colors.warning};
+    font-weight: 600;
+    margin-top: 18px;
 `;
 
-const GithubLink = styled(IoLogoGithub)`
-    color: ${colors.textPrimary};
+const PhraseError = styled.span`
+    display: block;
+    margin-top: 6px;
+    color: ${colors.warning};
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.4;
 `;
 
 const WordCount = props => {
@@ -251,11 +342,25 @@ class App extends React.Component {
             validLastWords: [],
             isCompleted: false,
             entropyInput: '',
+            phraseInput: '',
+            phraseError: '',
             seed: '',
+            addresses: null,
             passphrase: '',
             checksumValid: false,
         };
     }
+
+    seedFields = (words, passphrase, ok) => {
+        if (!ok) {
+            return { seed: '', addresses: null };
+        }
+        const seed = getSeed(words, passphrase || '');
+        return { seed: seed, addresses: deriveAddresses(seed) };
+    };
+
+    phraseText = words =>
+        words.length && words.every(Boolean) ? words.join(' ') : '';
 
     clearTextArea = () => {
         if (this.textAreaRef.current) {
@@ -271,12 +376,14 @@ class App extends React.Component {
             checksum: null,
             checksumValid: false,
             validLastWords: [],
+            addresses: null,
             ...details,
-            seed:
-                details.isCompleted && details.checksumValid
-                    ? getSeed(words, extra.passphrase || '')
-                    : '',
             ...extra,
+            ...this.seedFields(
+                words,
+                extra.passphrase,
+                details.isCompleted && details.checksumValid
+            ),
         };
     };
 
@@ -297,6 +404,8 @@ class App extends React.Component {
             this.phraseState(updatedWords, details, {
                 wordCount,
                 passphrase: details.isCompleted ? passphrase : '',
+                phraseInput: this.phraseText(updatedWords),
+                phraseError: '',
             })
         );
     };
@@ -309,6 +418,8 @@ class App extends React.Component {
             this.phraseState(words, details, {
                 entropyInput: '',
                 passphrase,
+                phraseInput: words.join(' '),
+                phraseError: '',
             })
         );
         this.clearTextArea();
@@ -324,7 +435,10 @@ class App extends React.Component {
             entropy: null,
             checksum: null,
             entropyInput: '',
+            phraseInput: '',
+            phraseError: '',
             seed: '',
+            addresses: null,
             passphrase: '',
         });
         this.clearTextArea();
@@ -343,8 +457,44 @@ class App extends React.Component {
             this.phraseState(words, details, {
                 entropyInput,
                 passphrase,
+                phraseInput: words.join(' '),
+                phraseError: '',
             })
         );
+    };
+
+    handlePhrase = e => {
+        const phraseInput = e.target.value;
+        if (!phraseInput.trim()) {
+            this.handleReset();
+            return;
+        }
+        const { wordList, passphrase } = this.state;
+        const parsed = parseMnemonic(phraseInput, wordList);
+        if (parsed.error) {
+            // Leave the current words in place. The seed stays hidden while
+            // this text does not match them.
+            this.setState({
+                phraseInput,
+                phraseError: parsed.error,
+                seed: '',
+                addresses: null,
+            });
+            return;
+        }
+        // Keep the pasted last word even when its checksum is wrong.
+        const words = parsed.words;
+        const details = getDetails(words, wordList);
+        this.setState(
+            this.phraseState(words, details, {
+                wordCount: words.length,
+                entropyInput: '',
+                passphrase,
+                phraseInput,
+                phraseError: '',
+            })
+        );
+        this.clearTextArea();
     };
 
     handleChange = ({ word, index }) => {
@@ -364,6 +514,8 @@ class App extends React.Component {
             this.phraseState(updatedWords, details, {
                 entropyInput: '',
                 passphrase,
+                phraseInput: this.phraseText(updatedWords),
+                phraseError: '',
             })
         );
         this.clearTextArea();
@@ -374,10 +526,11 @@ class App extends React.Component {
         const { words, isCompleted, checksumValid } = this.state;
         this.setState({
             passphrase,
-            seed:
+            ...this.seedFields(
+                words,
+                passphrase,
                 isCompleted && checksumValid
-                    ? getSeed(words, passphrase)
-                    : '',
+            ),
         });
     };
 
@@ -404,9 +557,12 @@ class App extends React.Component {
             entropy,
             checksum,
             seed,
+            addresses,
             isCompleted,
             checksumValid,
             passphrase,
+            phraseInput,
+            phraseError,
         } = this.state;
         // console.log(this.state);
         // console.log(words.join(' '));
@@ -432,7 +588,7 @@ class App extends React.Component {
         }
 
         return (
-            <div>
+            <Page>
                 <GlobalStyles />
                 <Helmet>
                     <title>BIP39 Mnemonic Builder</title>
@@ -442,29 +598,56 @@ class App extends React.Component {
                     ></meta>
                 </Helmet>
                 <Title>BIP39 Mnemonic Builder</Title>
-                <CenteredRow>
-                    <WordCount
-                        value={wordCount}
-                        onChange={this.handleCountChange}
-                    />
-                    <GenerateButton onClick={this.handleGenerate}>
-                        Generate Random
-                    </GenerateButton>
-                    <ResetButton onClick={this.handleReset}>Reset</ResetButton>
-                </CenteredRow>
-                <CenteredRow>
-                    <textarea
-                        ref={this.textAreaRef}
-                        placeholder="Optional user provided entropy. Type randomly here to generate a random mnemonic."
-                        autoComplete="off"
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        onChange={this.handleEntropy}
-                    />
-                </CenteredRow>
+                <Lead>
+                    Paste a phrase, pick the words, or generate them here. The
+                    phrase never leaves this page.
+                </Lead>
+                <Controls>
+                    <CenteredRow>
+                        <WordCount
+                            value={wordCount}
+                            onChange={this.handleCountChange}
+                        />
+                        <GenerateButton onClick={this.handleGenerate}>
+                            Generate
+                        </GenerateButton>
+                        <ResetButton onClick={this.handleReset}>
+                            Reset
+                        </ResetButton>
+                    </CenteredRow>
+                    <PhraseLabel>
+                        Phrase
+                        <textarea
+                            name="bip39-phrase"
+                            placeholder="Paste 12, 15, 18, 21, or 24 words."
+                            autoComplete="off"
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            value={phraseInput}
+                            onChange={this.handlePhrase}
+                        />
+                        {phraseError ? (
+                            <PhraseError>{phraseError}</PhraseError>
+                        ) : null}
+                    </PhraseLabel>
+                    <FieldLabel>
+                        Entropy
+                        <textarea
+                            ref={this.textAreaRef}
+                            placeholder="Optional. The phrase is the SHA-256 of whatever you type."
+                            autoComplete="off"
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            onChange={this.handleEntropy}
+                        />
+                    </FieldLabel>
+                </Controls>
                 <FlexRow>{wordSelectors}</FlexRow>
-                {isCompleted ? (
+                {isCompleted && !phraseError ? (
                     <DetailsContainer>
                         <Header>
                             Entropy - {entropyBits} bits
@@ -526,6 +709,34 @@ class App extends React.Component {
                                     />
                                 </div>
                                 <LongString>{seed}</LongString>
+                                {addresses ? (
+                                    <div>
+                                        <Header>
+                                            Addresses
+                                            <Subheader>
+                                                First receive address from
+                                                this seed. Bitcoin is native
+                                                SegWit. Derived here.
+                                            </Subheader>
+                                        </Header>
+                                        <div>
+                                            <DetailsLabel>
+                                                Bitcoin {BTC_ADDRESS_PATH}
+                                            </DetailsLabel>
+                                            <LongString>
+                                                {addresses.btc}
+                                            </LongString>
+                                        </div>
+                                        <div>
+                                            <DetailsLabel>
+                                                EVM {EVM_ADDRESS_PATH}
+                                            </DetailsLabel>
+                                            <LongString>
+                                                {addresses.evm}
+                                            </LongString>
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
                         ) : (
                             <ChecksumWarning>
@@ -535,16 +746,7 @@ class App extends React.Component {
                         )}
                     </DetailsContainer>
                 ) : null}
-                <CenteredRow>
-                    <a
-                        href="https://github.com/mikeygee/bip39"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        <GithubLink size={30} />
-                    </a>
-                </CenteredRow>
-            </div>
+            </Page>
         );
     }
 }

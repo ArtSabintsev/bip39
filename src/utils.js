@@ -162,6 +162,59 @@ export function withValidLastWord(words, validLastWords = []) {
 }
 
 /**
+ * Splits a pasted mnemonic. Accepts extra whitespace, commas, and a leading
+ * index such as "1." or "12)". Does not repair a bad checksum.
+ *
+ * @param {string} text
+ * @param {string[]} wordList
+ * @return {{ words: string[], error: string }}
+ */
+export function parseMnemonic(text = '', wordList = []) {
+    const tokens = String(text)
+        .normalize('NFKD')
+        .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+        .split(/[\s,;]+/)
+        .map(token =>
+            token
+                .toLowerCase()
+                .replace(/^\d+[.):-]+/, '')
+                .replace(/^[^a-z]+|[^a-z]+$/g, '')
+        )
+        .filter(Boolean);
+
+    if (tokens.length === 0) {
+        return { words: [], error: '' };
+    }
+    if (LENGTH_OPTIONS.indexOf(tokens.length) === -1) {
+        const noun = tokens.length === 1 ? 'word' : 'words';
+        return {
+            words: [],
+            error:
+                'Phrase has ' +
+                tokens.length +
+                ' ' +
+                noun +
+                '. Use 12, 15, 18, 21, or 24.',
+        };
+    }
+
+    const unknown = [];
+    tokens.forEach(token => {
+        if (wordList.indexOf(token) === -1 && unknown.indexOf(token) === -1) {
+            unknown.push(token);
+        }
+    });
+    if (unknown.length) {
+        const label = unknown.length === 1 ? 'Unknown word' : 'Unknown words';
+        return {
+            words: [],
+            error: label + ': ' + unknown.join(', ') + '.',
+        };
+    }
+    return { words: tokens, error: '' };
+}
+
+/**
  * Converts arbitrary utf8 encoded string into a mnemonic by using the SHA256 hash of the string as the entropy. If chosen mnemonic length is less than 24, use the first n bits, where n is the entropy length in bits.
  *
  * @param {string} entropy - utf8 string
